@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Cronograma — publis & conteúdo</title>
+<link rel="manifest" href="manifest.json" />
+<meta name="theme-color" content="#2B2622" />
+<script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap');
+  * { box-sizing: border-box; }
+  :root {
+    --bg: #FAF6F0;
+    --ink: #2B2622;
+    --ink-soft: #8A8074;
+    --line: #E7DDCF;
+    --card-bg: #FFFFFF;
+    --urgent: #C23B3B;
+    --warn: #B77A1F;
+    --ok: #6B8F71;
+  }
+  body {
+    margin: 0;
+    font-family: 'Inter', sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    min-height: 100vh;
+    padding: 20px 16px 40px;
+  }
+  h1, h2 { font-family: 'Fraunces', serif; margin: 0; }
+  .header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 4px; }
+  .header h1 { font-size: 26px; font-weight: 700; letter-spacing: -0.01em; }
+  .header .sub { color: var(--ink-soft); font-size: 13px; margin-top: 2px; display: flex; align-items: center; gap: 6px; }
+  .sync-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); display: inline-block; }
+  .sync-dot.err { background: var(--urgent); }
+  .sync-dot.busy { background: var(--warn); }
+  .add-btn {
+    background: var(--ink); color: var(--bg); border: none; width: 42px; height: 42px;
+    border-radius: 50%; display: flex; align-items: center; justify-content: center;
+    cursor: pointer; flex-shrink: 0; box-shadow: 0 2px 6px rgba(43,38,34,0.25); font-size: 22px;
+  }
+  .filters { display: flex; gap: 6px; overflow-x: auto; margin: 18px 0 20px; padding-bottom: 2px; }
+  .filter-chip {
+    border: 1px solid var(--line); background: transparent; color: var(--ink-soft);
+    padding: 6px 13px; border-radius: 20px; font-size: 13px; font-weight: 500;
+    white-space: nowrap; cursor: pointer; font-family: 'Inter', sans-serif;
+  }
+  .filter-chip.active { background: var(--ink); border-color: var(--ink); color: var(--bg); }
+  .board { display: flex; gap: 12px; overflow-x: auto; scroll-snap-type: x mandatory; margin: 0 -16px; padding: 0 16px 8px; }
+  .column { flex: 0 0 82vw; max-width: 340px; scroll-snap-align: start; }
+  .column-head { display: flex; align-items: baseline; gap: 6px; margin-bottom: 10px; padding: 0 2px; }
+  .column-head h3 { font-family: 'Inter', sans-serif; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ink-soft); }
+  .column-count { font-family: 'Space Mono', monospace; font-size: 11px; color: var(--ink-soft); }
+  .column-cards { display: flex; flex-direction: column; gap: 8px; min-height: 40px; }
+  .card { background: var(--card-bg); border-radius: 12px; padding: 12px 13px; border-left: 4px solid var(--cat-color); box-shadow: 0 1px 3px rgba(43,38,34,0.06); cursor: pointer; }
+  .card-cat { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--cat-color); margin-bottom: 3px; }
+  .card-title { font-size: 14.5px; font-weight: 600; line-height: 1.3; margin-bottom: 8px; }
+  .card-meta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .meta-date, .meta-value { font-family: 'Space Mono', monospace; font-size: 11px; color: var(--ink-soft); display: flex; align-items: center; gap: 3px; }
+  .chip { font-size: 10.5px; font-weight: 700; padding: 2px 7px; border-radius: 20px; font-family: 'Space Mono', monospace; }
+  .chip-urgent { background: #F6E1DF; color: var(--urgent); }
+  .chip-warn { background: #F5E9D6; color: var(--warn); }
+  .chip-ok { background: #E6ECE4; color: var(--ok); }
+  .empty-col { border: 1.5px dashed var(--line); border-radius: 12px; padding: 16px; font-size: 12px; color: var(--ink-soft); text-align: center; }
+  .loading-msg { text-align: center; color: var(--ink-soft); font-size: 13px; padding: 40px 0; }
+  .config-warning { background: #F6E1DF; color: var(--urgent); border-radius: 12px; padding: 14px 16px; font-size: 13px; line-height: 1.5; margin-bottom: 18px; }
+  .config-warning code { background: rgba(0,0,0,0.06); padding: 1px 5px; border-radius: 4px; }
+  .overlay { position: fixed; inset: 0; background: rgba(43,38,34,0.45); display: none; align-items: flex-end; justify-content: center; z-index: 50; }
+  .overlay.open { display: flex; }
+  .modal { background: var(--bg); width: 100%; max-width: 460px; max-height: 88vh; overflow-y: auto; border-radius: 20px 20px 0 0; padding: 20px 18px 18px; }
+  @media (min-width: 520px) { .overlay { align-items: center; } .modal { border-radius: 18px; } }
+  .modal-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
+  .modal-head h2 { font-size: 19px; font-weight: 600; }
+  .icon-btn { background: none; border: none; color: var(--ink-soft); cursor: pointer; padding: 4px; font-size: 18px; }
+  .cat-picker { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 16px; }
+  .cat-pill { border: 1.5px solid var(--line); background: transparent; padding: 6px 12px; border-radius: 20px; font-size: 12.5px; font-weight: 500; cursor: pointer; font-family: 'Inter', sans-serif; color: var(--ink-soft); }
+  .cat-pill.active { border-color: var(--cat-color); background: var(--cat-color); color: #fff; }
+  .field { display: flex; flex-direction: column; gap: 5px; margin-bottom: 12px; flex: 1; }
+  .field span { font-size: 12px; font-weight: 600; color: var(--ink-soft); }
+  .field input, .field select, .field textarea { border: 1.5px solid var(--line); border-radius: 10px; padding: 9px 11px; font-size: 14px; font-family: 'Inter', sans-serif; background: #fff; color: var(--ink); width: 100%; }
+  .field input:focus, .field select:focus, .field textarea:focus { outline: 2px solid var(--ink); outline-offset: 1px; }
+  .field-row { display: flex; gap: 10px; }
+  .modal-actions { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+  .btn-primary { background: var(--ink); color: var(--bg); border: none; padding: 10px 18px; border-radius: 10px; font-size: 14px; font-weight: 600; cursor: pointer; }
+  .btn-primary:disabled { opacity: 0.4; cursor: default; }
+  .btn-ghost { background: none; border: none; color: var(--ink-soft); padding: 10px 12px; font-size: 14px; cursor: pointer; }
+  .btn-ghost-danger { background: none; border: none; color: var(--urgent); font-size: 13px; display: flex; align-items: center; gap: 5px; cursor: pointer; padding: 8px 4px; }
+  .login-screen { display: none; flex-direction: column; align-items: center; justify-content: center; min-height: 70vh; text-align: center; gap: 14px; padding: 0 20px; }
+  .login-screen h2 { font-size: 20px; }
+  .login-screen p { color: var(--ink-soft); font-size: 13px; max-width: 320px; line-height: 1.5; }
+  .login-screen input { border: 1.5px solid var(--line); border-radius: 10px; padding: 10px 12px; font-size: 14px; font-family: 'Inter', sans-serif; background: #fff; color: var(--ink); width: 100%; max-width: 300px; }
+  .login-msg { font-size: 12.5px; color: var(--ink-soft); min-height: 16px; }
+  .logout-btn { background: none; border: none; color: var(--ink-soft); font-size: 12px; cursor: pointer; padding: 0; text-decoration: underline; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div>
+    <h1>Cronograma</h1>
+    <div class="sub">
+      <span class="sync-dot" id="syncDot"></span><span id="syncText">publis, permutas, shop e orgânico</span>
+      <button class="logout-btn" id="logoutBtn" style="display:none">sair</button>
+    </div>
+  </div>
+  <button class="add-btn" id="addBtn" aria-label="Adicionar" style="display:none">+</button>
+</div>
+
+<div id="configWarning" class="config-warning" style="display:none">
+  Falta configurar a conexão com o banco. Abra o arquivo <code>index.html</code> e preencha
+  <code>SUPABASE_URL</code> e <code>SUPABASE_ANON_KEY</code> no topo do script (veja o passo a passo que te enviei).
+</div>
+
+<div class="login-screen" id="loginScreen">
+  <h2>Entrar</h2>
+  <p>Digite seu e-mail para receber um link de acesso ao cronograma. Só o e-mail autorizado consegue ver e editar os dados.</p>
+  <input type="email" id="loginEmail" placeholder="seu@email.com" autocomplete="email" />
+  <button class="btn-primary" id="sendLinkBtn">Enviar link de acesso</button>
+  <div class="login-msg" id="loginMsg"></div>
+</div>
+
+<div class="filters" id="filters"></div>
+<div id="loadingMsg" class="loading-msg">Carregando...</div>
+<div class="board" id="board" style="display:none"></div>
+
+<div class="overlay" id="overlay">
+  <div class="modal">
+    <div class="modal-head">
+      <h2 id="modalTitle">Novo item</h2>
+      <button class="icon-btn" id="closeBtn">✕</button>
+    </div>
+    <div class="cat-picker" id="catPicker"></div>
+    <label class="field"><span id="titleLabel">Marca</span>
+      <input type="text" id="fTitle" placeholder="Ex: Vichy" />
+    </label>
+    <div class="field-row">
+      <label class="field"><span>Prazo</span><input type="date" id="fDeadline" /></label>
+      <label class="field"><span>Status</span>
+        <select id="fStatus"></select>
+      </label>
+    </div>
+    <div class="field-row">
+      <label class="field"><span>Valor (opcional)</span><input type="number" id="fValue" placeholder="R$" /></label>
+      <label class="field"><span>Contato da marca (opcional)</span><input type="text" id="fContact" placeholder="email / whatsapp" /></label>
+    </div>
+    <label class="field"><span>Notas (opcional)</span><textarea id="fNotes" rows="2" placeholder="Roteiro, briefing, links..."></textarea></label>
+    <div class="modal-actions">
+      <button class="btn-ghost-danger" id="deleteBtn" style="display:none">🗑 Excluir</button>
+      <div style="flex:1"></div>
+      <button class="btn-ghost" id="cancelBtn">Cancelar</button>
+      <button class="btn-primary" id="saveBtn">Salvar</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ====== CONFIGURAÇÃO — preencha com os dados do seu projeto Supabase ======
+const SUPABASE_URL = "https://szdkxslqmihodaogirtm.supabase.co";
+const SUPABASE_ANON_KEY = "sb_publishable_e-npM4zwbZo7LB_0rZxDIg_OoDyoqLl";
+// ============================================================================
+
+const CATEGORIES = {
+  paga: { label: "Publicidade Paga", color: "#BB5B3A", fieldLabel: "Marca" },
+  permuta: { label: "Permuta", color: "#6F8A64", fieldLabel: "Marca" },
+  shop: { label: "TikTok Shop", color: "#D6396B", fieldLabel: "Produto / Vídeo" },
+  organico: { label: "Orgânico", color: "#4F7396", fieldLabel: "Tema" },
+};
+const STATUSES = [
+  { key: "ideia", label: "Ideia" },
+  { key: "combinado", label: "Roteiro / Combinado" },
+  { key: "gravado", label: "Gravado" },
+  { key: "postado", label: "Postado" },
+  { key: "concluido", label: "Concluído" },
+];
+
+let cards = [];
+let filter = "todas";
+let editingId = null;
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+function setSync(state, text) {
+  const dot = document.getElementById("syncDot");
+  const label = document.getElementById("syncText");
+  dot.className = "sync-dot" + (state === "err" ? " err" : state === "busy" ? " busy" : "");
+  if (text) label.textContent = text;
+}
+
+function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
+function daysUntil(dateStr) {
+  const today = new Date(); today.setHours(0,0,0,0);
+  const d = new Date(dateStr + "T00:00:00");
+  return Math.round((d - today) / 86400000);
+}
+function formatDate(dateStr) {
+  const d = new Date(dateStr + "T00:00:00");
+  return d.toLocaleDateString("pt-BR", { day: "2-digit", month: "short" });
+}
+function formatValue(v) {
+  const n = Number(v);
+  if (Number.isNaN(n)) return v;
+  return n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+}
+function urgencyChip(deadline, status) {
+  if (!deadline || status === "concluido") return "";
+  const d = daysUntil(deadline);
+  if (d < 0) return `<span class="chip chip-urgent">Atrasado ${Math.abs(d)}d</span>`;
+  if (d === 0) return `<span class="chip chip-urgent">Hoje</span>`;
+  if (d <= 3) return `<span class="chip chip-warn">${d}d</span>`;
+  return `<span class="chip chip-ok">${d}d</span>`;
+}
+function escapeHtml(s) {
+  const d = document.createElement("div");
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+function renderFilters() {
+  const el = document.getElementById("filters");
+  let html = `<button class="filter-chip ${filter==='todas'?'active':''}" data-f="todas">Todas</button>`;
+  for (const [key, c] of Object.entries(CATEGORIES)) {
+    html += `<button class="filter-chip ${filter===key?'active':''}" data-f="${key}">${c.label}</button>`;
+  }
+  el.innerHTML = html;
+  el.querySelectorAll(".filter-chip").forEach(btn => {
+    btn.onclick = () => { filter = btn.dataset.f; renderAll(); };
+  });
+}
+
+function renderBoard() {
+  const el = document.getElementById("board");
+  const visible = cards.filter(c => filter === "todas" || c.category === filter);
+  let html = "";
+  for (const status of STATUSES) {
+    const items = visible.filter(c => c.status === status.key)
+      .sort((a,b) => (a.deadline||"9999").localeCompare(b.deadline||"9999"));
+    html += `<div class="column"><div class="column-head"><h3>${status.label}</h3><span class="column-count">${items.length}</span></div><div class="column-cards">`;
+    if (items.length === 0) html += `<div class="empty-col">Nada aqui</div>`;
+    for (const card of items) {
+      const cat = CATEGORIES[card.category];
+      html += `<div class="card" style="--cat-color:${cat.color}" data-id="${card.id}">
+        <div class="card-cat">${cat.label}</div>
+        <div class="card-title">${escapeHtml(card.title)}</div>
+        <div class="card-meta">
+          ${card.deadline ? `<span class="meta-date">📅 ${formatDate(card.deadline)}</span>` : ""}
+          ${urgencyChip(card.deadline, card.status)}
+          ${card.value ? `<span class="meta-value">${formatValue(card.value)}</span>` : ""}
+          ${card.contact ? `<span class="meta-value">📞</span>` : ""}
+        </div>
+      </div>`;
+    }
+    html += `</div></div>`;
+  }
+  el.innerHTML = html;
+  el.querySelectorAll(".card").forEach(cardEl => {
+    cardEl.onclick = () => openModal(cards.find(c => c.id === cardEl.dataset.id));
+  });
+}
+
+function renderAll() { renderFilters(); renderBoard(); }
+
+// ---- Supabase sync ----
+async function loadCards() {
+  setSync("busy", "Sincronizando...");
+  const { data, error } = await sb.from("cards").select("*").order("deadline", { ascending: true });
+  if (error) { setSync("err", "Erro ao carregar"); console.error(error); return; }
+  cards = data || [];
+  setSync("ok", "Sincronizado");
+  document.getElementById("loadingMsg").style.display = "none";
+  document.getElementById("board").style.display = "flex";
+  renderAll();
+}
+
+async function upsertCard(card) {
+  setSync("busy", "Salvando...");
+  const idx = cards.findIndex(c => c.id === card.id);
+  if (idx >= 0) cards[idx] = card; else cards.push(card);
+  renderAll();
+  const { error } = await sb.from("cards").upsert(card);
+  if (error) { setSync("err", "Erro ao salvar"); console.error(error); return; }
+  setSync("ok", "Sincronizado");
+}
+
+async function deleteCardRemote(id) {
+  setSync("busy", "Excluindo...");
+  cards = cards.filter(c => c.id !== id);
+  renderAll();
+  const { error } = await sb.from("cards").delete().eq("id", id);
+  if (error) { setSync("err", "Erro ao excluir"); console.error(error); return; }
+  setSync("ok", "Sincronizado");
+}
+
+// ---- Modal logic ----
+const overlay = document.getElementById("overlay");
+let currentCategory = "paga";
+
+function renderCatPicker() {
+  const el = document.getElementById("catPicker");
+  el.innerHTML = Object.entries(CATEGORIES).map(([key,c]) =>
+    `<button type="button" class="cat-pill ${currentCategory===key?'active':''}" style="--cat-color:${c.color}" data-cat="${key}">${c.label}</button>`
+  ).join("");
+  el.querySelectorAll(".cat-pill").forEach(btn => {
+    btn.onclick = () => { currentCategory = btn.dataset.cat; renderCatPicker(); updateTitleLabel(); };
+  });
+}
+function updateTitleLabel() {
+  document.getElementById("titleLabel").textContent = CATEGORIES[currentCategory].fieldLabel;
+}
+function fillStatusSelect() {
+  document.getElementById("fStatus").innerHTML = STATUSES.map(s => `<option value="${s.key}">${s.label}</option>`).join("");
+}
+fillStatusSelect();
+
+function openModal(card) {
+  editingId = card ? card.id : null;
+  currentCategory = card ? card.category : (filter !== "todas" ? filter : "paga");
+  document.getElementById("modalTitle").textContent = card ? "Editar" : "Novo item";
+  document.getElementById("fTitle").value = card ? card.title : "";
+  document.getElementById("fDeadline").value = card ? (card.deadline || "") : "";
+  document.getElementById("fStatus").value = card ? card.status : "ideia";
+  document.getElementById("fValue").value = card ? (card.value || "") : "";
+  document.getElementById("fContact").value = card ? (card.contact || "") : "";
+  document.getElementById("fNotes").value = card ? (card.notes || "") : "";
+  document.getElementById("deleteBtn").style.display = card ? "flex" : "none";
+  renderCatPicker();
+  updateTitleLabel();
+  overlay.classList.add("open");
+  document.getElementById("fTitle").focus();
+}
+function closeModal() { overlay.classList.remove("open"); editingId = null; }
+
+document.getElementById("addBtn").onclick = () => openModal(null);
+document.getElementById("closeBtn").onclick = closeModal;
+document.getElementById("cancelBtn").onclick = closeModal;
+overlay.onclick = (e) => { if (e.target === overlay) closeModal(); };
+
+document.getElementById("saveBtn").onclick = () => {
+  const title = document.getElementById("fTitle").value.trim();
+  if (!title) return;
+  const data = {
+    id: editingId || uid(),
+    category: currentCategory,
+    title,
+    deadline: document.getElementById("fDeadline").value || null,
+    status: document.getElementById("fStatus").value,
+    value: document.getElementById("fValue").value,
+    contact: document.getElementById("fContact").value,
+    notes: document.getElementById("fNotes").value,
+  };
+  closeModal();
+  upsertCard(data);
+};
+
+document.getElementById("deleteBtn").onclick = () => {
+  const id = editingId;
+  closeModal();
+  deleteCardRemote(id);
+};
+
+// ---- Auth (link mágico) ----
+function showLogin() {
+  document.getElementById("loadingMsg").style.display = "none";
+  document.getElementById("board").style.display = "none";
+  document.getElementById("filters").style.display = "none";
+  document.getElementById("addBtn").style.display = "none";
+  document.getElementById("logoutBtn").style.display = "none";
+  document.getElementById("loginScreen").style.display = "flex";
+}
+function showApp() {
+  document.getElementById("loginScreen").style.display = "none";
+  document.getElementById("filters").style.display = "flex";
+  document.getElementById("addBtn").style.display = "flex";
+  document.getElementById("logoutBtn").style.display = "inline";
+  document.getElementById("loadingMsg").style.display = "block";
+  loadCards();
+}
+
+document.getElementById("sendLinkBtn").onclick = async () => {
+  const email = document.getElementById("loginEmail").value.trim();
+  const msg = document.getElementById("loginMsg");
+  if (!email) return;
+  const btn = document.getElementById("sendLinkBtn");
+  btn.disabled = true; btn.textContent = "Enviando...";
+  const { error } = await sb.auth.signInWithOtp({
+    email,
+    options: { emailRedirectTo: window.location.href },
+  });
+  msg.textContent = error ? "Erro ao enviar link. Tente novamente." : "Link enviado! Confira seu e-mail.";
+  btn.disabled = false; btn.textContent = "Enviar link de acesso";
+};
+
+document.getElementById("logoutBtn").onclick = () => sb.auth.signOut();
+
+sb.auth.onAuthStateChange((_event, session) => {
+  if (session) showApp(); else showLogin();
+});
+
+sb.auth.getSession().then(({ data: { session } }) => {
+  if (session) showApp(); else showLogin();
+});
+</script>
+</body>
+</html>

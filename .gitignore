@@ -1,0 +1,29 @@
+# macOS
+.DS_Store
+
+# Claude Code (permissões e config locais não devem ir pro repo)
+.claude/settings.local.json
+.claude/scheduled_tasks.lock
+
+# Segredos e variáveis de ambiente
+.env
+.env.*
+!.env.example
+
+# Node
+node_modules/
+dist/
+build/
+.next/
+.turbo/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Logs e temporários
+*.log
+.cache/
+tmp/
